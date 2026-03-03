@@ -49,7 +49,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [students]);
 
   const repLogin = useCallback((email: string, password: string) => {
-    if (email === "rep@compssa.org" && password === "compssa2025") {
+    if (email === "miles@st.compssa.ug.edu" && password === "password") {
       setUser({ name: "CS Rep", email, isRep: true });
       return { success: true };
     }
