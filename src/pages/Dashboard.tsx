@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { Navigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import Logo from "@/components/Logo";
-import { useAuth } from "@/contexts/AuthContext";
+import { supabase } from "@/integrations/supabase/client";
 import {
   BarChart,
   Bar,
@@ -12,45 +12,79 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const chartData = [
-  { month: "Jan", attendance: 45 },
-  { month: "Feb", attendance: 60 },
-  { month: "Mar", attendance: 90 },
-  { month: "Apr", attendance: 55 },
-  { month: "May", attendance: 70 },
-  { month: "Jun", attendance: 80 },
-];
-
-const EVENTS_TABLE = [
-  { name: "Industry Night with Tech Leaders", date: "Fri 14 Mar", type: "Workshop", going: 90 },
-  { name: "AI & Machine Learning Seminar", date: "Wed 19 Mar", type: "Seminar", going: 54 },
-  { name: "COMPSSA Hackathon 2025", date: "Sat 29 Mar", type: "Hackathon", going: 120 },
-];
-
-const STATS = [
-  { label: "Events Posted", value: "12" },
-  { label: "Members", value: "340" },
-  { label: "Attendances Confirmed", value: "264" },
-  { label: "Free to Run", value: "100%" },
-];
+interface Attendee {
+  id: string;
+  event_title: string;
+  name: string;
+  email: string;
+  student_id: string;
+  level: string;
+  phone: string;
+  reason: string | null;
+  created_at: string;
+}
 
 const Dashboard = () => {
-  const { user, logout } = useAuth();
-  const [activeNav, setActiveNav] = useState("overview");
-  const [postForm, setPostForm] = useState({ title: "", date: "", venue: "", desc: "", type: "Workshop", imageUrl: "" });
-  const [postSuccess, setPostSuccess] = useState(false);
+  const [attendees, setAttendees] = useState<Attendee[]>([]);
+  const [loading, setLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [activeNav, setActiveNav] = useState("overview");
 
-  if (!user?.isRep) return <Navigate to="/rep-login" replace />;
-
-  const handlePost = (e: React.FormEvent) => {
-    e.preventDefault();
-    setPostSuccess(true);
-    setTimeout(() => setPostSuccess(false), 4000);
-    setPostForm({ title: "", date: "", venue: "", desc: "", type: "Workshop", imageUrl: "" });
+  const load = async () => {
+    const { data } = await supabase
+      .from("attendees")
+      .select("*")
+      .order("created_at", { ascending: false });
+    setAttendees(data || []);
+    setLoading(false);
   };
 
-  const NAV_ITEMS = ["Overview", "Post Event", "All Events", "Members", "Settings"];
+  useEffect(() => {
+    load();
+  }, []);
+
+  // Per-event counts
+  const eventCounts = attendees.reduce<Record<string, number>>((acc, a) => {
+    acc[a.event_title] = (acc[a.event_title] || 0) + 1;
+    return acc;
+  }, {});
+
+  const chartData = Object.entries(eventCounts).map(([event, count]) => ({
+    event: event.length > 18 ? event.slice(0, 18) + "…" : event,
+    attendance: count,
+  }));
+
+  const levelCounts = attendees.reduce<Record<string, number>>((acc, a) => {
+    acc[a.level] = (acc[a.level] || 0) + 1;
+    return acc;
+  }, {});
+
+  const exportCSV = () => {
+    const header = "Name,Email,Student ID,Level,Phone,Event,Reason,Date\n";
+    const rows = attendees
+      .map((a) =>
+        [a.name, a.email, a.student_id, a.level, a.phone, a.event_title, (a.reason || "").replace(/,/g, ";"), new Date(a.created_at).toLocaleDateString()]
+          .map((v) => `"${v}"`)
+          .join(",")
+      )
+      .join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "compssa-attendees.csv";
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const STATS = [
+    { label: "Total Confirmations", value: String(attendees.length) },
+    { label: "Events With Signups", value: String(Object.keys(eventCounts).length) },
+    { label: "Most Popular Level", value: Object.entries(levelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "—" },
+    { label: "Latest Signup", value: attendees[0] ? new Date(attendees[0].created_at).toLocaleDateString() : "—" },
+  ];
+
+  const NAV_ITEMS = ["Overview", "Attendees"];
 
   return (
     <div className="min-h-screen flex bg-muted">
@@ -63,15 +97,15 @@ const Dashboard = () => {
       <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-60 bg-secondary text-secondary-foreground flex flex-col transition-transform lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="p-6 flex items-center gap-3 border-b border-sidebar-border">
           <Logo size={28} />
-          <span className="font-poppins font-bold text-sm">Event Pulse</span>
+          <span className="font-poppins font-bold text-sm">Event Pulse Admin</span>
         </div>
         <nav className="flex-1 p-4 space-y-1">
           {NAV_ITEMS.map((item) => (
             <button
               key={item}
-              onClick={() => { setActiveNav(item.toLowerCase().replace(" ", "-")); setSidebarOpen(false); }}
+              onClick={() => { setActiveNav(item.toLowerCase()); setSidebarOpen(false); }}
               className={`w-full text-left px-4 py-2.5 rounded-lg font-poppins text-sm transition-colors min-h-[44px] ${
-                activeNav === item.toLowerCase().replace(" ", "-")
+                activeNav === item.toLowerCase()
                   ? "bg-sidebar-accent text-primary font-semibold"
                   : "text-secondary-foreground/60 hover:text-secondary-foreground hover:bg-sidebar-accent/50"
               }`}
@@ -81,98 +115,91 @@ const Dashboard = () => {
           ))}
         </nav>
         <div className="p-4 border-t border-sidebar-border">
-          <p className="font-poppins text-xs text-secondary-foreground/50">CS Rep · 2024/2025</p>
-          <button onClick={logout} className="font-poppins text-xs text-destructive hover:underline mt-2">Sign Out</button>
+          <p className="font-poppins text-xs text-secondary-foreground/50 mb-2">COMPSSA Admin · Secret link — don't share</p>
+          <Link to="/" className="font-poppins text-xs text-primary hover:underline">← Back to site</Link>
         </div>
       </aside>
 
       {/* Main */}
       <main className="flex-1 p-6 lg:p-10 overflow-auto">
-        <h1 className="font-poppins font-extrabold text-2xl text-foreground mb-8 ml-10 lg:ml-0">Dashboard</h1>
+        <div className="flex items-center justify-between mb-8 ml-10 lg:ml-0">
+          <h1 className="font-poppins font-extrabold text-2xl text-foreground">Dashboard</h1>
+          <button onClick={exportCSV} disabled={attendees.length === 0} className="bg-primary text-primary-foreground font-poppins font-bold text-sm px-5 py-2.5 rounded-full hover:brightness-110 transition-all min-h-[44px] disabled:opacity-50">
+            Export to Excel (CSV)
+          </button>
+        </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
-          {STATS.map((s) => (
-            <div key={s.label} className="bg-card rounded-xl p-5 border border-border">
-              <p className="font-poppins font-extrabold text-2xl text-primary">{s.value}</p>
-              <p className="font-poppins text-sm text-muted-foreground mt-1">{s.label}</p>
+        {loading ? (
+          <p className="font-poppins text-muted-foreground">Loading attendance data…</p>
+        ) : (
+          <>
+            {/* Stats */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
+              {STATS.map((s) => (
+                <div key={s.label} className="bg-card rounded-xl p-5 border border-border">
+                  <p className="font-poppins font-extrabold text-2xl text-primary">{s.value}</p>
+                  <p className="font-poppins text-sm text-muted-foreground mt-1">{s.label}</p>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        {/* Chart */}
-        <div className="bg-card rounded-xl border border-border p-6 mb-10">
-          <h2 className="font-poppins font-bold text-lg text-card-foreground mb-6">Monthly Attendance</h2>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 90%)" />
-              <XAxis dataKey="month" tick={{ fontFamily: "Poppins", fontSize: 12 }} />
-              <YAxis tick={{ fontFamily: "Poppins", fontSize: 12 }} />
-              <Tooltip contentStyle={{ fontFamily: "Poppins", borderRadius: "8px" }} />
-              <Bar dataKey="attendance" fill="#E8820C" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        {/* Post Event Form */}
-        <div className="bg-card rounded-xl border border-border p-6 mb-10">
-          <h2 className="font-poppins font-bold text-lg text-card-foreground mb-6">Post a New Event</h2>
-          {postSuccess && (
-            <div className="bg-green-500/10 border border-green-500/30 text-green-600 font-poppins text-sm px-4 py-3 rounded-xl mb-6">
-              Event posted! Email notifications sent to 340 members.
+            {/* Chart */}
+            <div className="bg-card rounded-xl border border-border p-6 mb-10">
+              <h2 className="font-poppins font-bold text-lg text-card-foreground mb-6">Confirmations per Event</h2>
+              {chartData.length === 0 ? (
+                <p className="font-poppins text-sm text-muted-foreground">No confirmations yet — share the site link with students!</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(0 0% 90%)" />
+                    <XAxis dataKey="event" tick={{ fontFamily: "Poppins", fontSize: 12 }} />
+                    <YAxis allowDecimals={false} tick={{ fontFamily: "Poppins", fontSize: 12 }} />
+                    <Tooltip contentStyle={{ fontFamily: "Poppins", borderRadius: "8px" }} />
+                    <Bar dataKey="attendance" fill="#E8820C" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
-          )}
-          <form onSubmit={handlePost} className="grid md:grid-cols-2 gap-4">
-            <input value={postForm.title} onChange={(e) => setPostForm((p) => ({ ...p, title: e.target.value }))} placeholder="Event Title" required className="px-4 py-3 rounded-xl border border-input font-poppins text-sm bg-background text-foreground min-h-[44px]" />
-            <input type="datetime-local" value={postForm.date} onChange={(e) => setPostForm((p) => ({ ...p, date: e.target.value }))} required className="px-4 py-3 rounded-xl border border-input font-poppins text-sm bg-background text-foreground min-h-[44px]" />
-            <input value={postForm.venue} onChange={(e) => setPostForm((p) => ({ ...p, venue: e.target.value }))} placeholder="Venue" required className="px-4 py-3 rounded-xl border border-input font-poppins text-sm bg-background text-foreground min-h-[44px]" />
-            <select value={postForm.type} onChange={(e) => setPostForm((p) => ({ ...p, type: e.target.value }))} className="px-4 py-3 rounded-xl border border-input font-poppins text-sm bg-background text-foreground min-h-[44px]">
-              <option>Workshop</option>
-              <option>Seminar</option>
-              <option>Hackathon</option>
-              <option>Meeting</option>
-            </select>
-            <textarea value={postForm.desc} onChange={(e) => setPostForm((p) => ({ ...p, desc: e.target.value }))} placeholder="Description" rows={3} className="md:col-span-2 px-4 py-3 rounded-xl border border-input font-poppins text-sm bg-background text-foreground resize-none" />
-            <input value={postForm.imageUrl} onChange={(e) => setPostForm((p) => ({ ...p, imageUrl: e.target.value }))} placeholder="Paste an Unsplash image link" className="md:col-span-2 px-4 py-3 rounded-xl border border-input font-poppins text-sm bg-background text-foreground min-h-[44px]" />
-            <div className="md:col-span-2">
-              <button type="submit" className="bg-primary text-primary-foreground font-poppins font-bold text-sm px-8 py-3 rounded-full hover:brightness-110 transition-all min-h-[44px]">
-                Post Event & Notify Members
-              </button>
-            </div>
-          </form>
-        </div>
 
-        {/* Events Table */}
-        <div className="bg-card rounded-xl border border-border p-6">
-          <h2 className="font-poppins font-bold text-lg text-card-foreground mb-6">Recent Events</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left font-poppins font-semibold text-sm text-muted-foreground pb-3">Event Name</th>
-                  <th className="text-left font-poppins font-semibold text-sm text-muted-foreground pb-3">Date</th>
-                  <th className="text-left font-poppins font-semibold text-sm text-muted-foreground pb-3">Type</th>
-                  <th className="text-left font-poppins font-semibold text-sm text-muted-foreground pb-3">People Going</th>
-                  <th className="text-left font-poppins font-semibold text-sm text-muted-foreground pb-3">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {EVENTS_TABLE.map((ev) => (
-                  <tr key={ev.name} className="border-b border-border last:border-0">
-                    <td className="py-4 font-poppins text-sm text-card-foreground font-semibold">{ev.name}</td>
-                    <td className="py-4 font-poppins text-sm text-muted-foreground">{ev.date}</td>
-                    <td className="py-4"><span className="bg-primary/10 text-primary font-poppins font-semibold text-xs px-3 py-1 rounded-full">{ev.type}</span></td>
-                    <td className="py-4 font-poppins text-sm text-muted-foreground">{ev.going}</td>
-                    <td className="py-4 space-x-3">
-                      <button className="font-poppins text-sm text-muted-foreground hover:text-foreground min-h-[44px]">View</button>
-                      <button className="font-poppins text-sm text-destructive hover:underline min-h-[44px]">Delete</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+            {/* Attendees Table */}
+            <div className="bg-card rounded-xl border border-border p-6">
+              <h2 className="font-poppins font-bold text-lg text-card-foreground mb-6">All Confirmations ({attendees.length})</h2>
+              {attendees.length === 0 ? (
+                <p className="font-poppins text-sm text-muted-foreground">No one has confirmed yet. Once students fill the form, they'll appear here.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead>
+                      <tr className="border-b border-border">
+                        <th className="text-left font-poppins font-semibold text-sm text-muted-foreground pb-3">Name</th>
+                        <th className="text-left font-poppins font-semibold text-sm text-muted-foreground pb-3">Student ID</th>
+                        <th className="text-left font-poppins font-semibold text-sm text-muted-foreground pb-3">Level</th>
+                        <th className="text-left font-poppins font-semibold text-sm text-muted-foreground pb-3">WhatsApp</th>
+                        <th className="text-left font-poppins font-semibold text-sm text-muted-foreground pb-3">Event</th>
+                        <th className="text-left font-poppins font-semibold text-sm text-muted-foreground pb-3">Why Attending</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {attendees.map((a) => (
+                        <tr key={a.id} className="border-b border-border last:border-0">
+                          <td className="py-4 font-poppins text-sm text-card-foreground font-semibold">
+                            {a.name}
+                            <span className="block font-normal text-xs text-muted-foreground">{a.email}</span>
+                          </td>
+                          <td className="py-4 font-poppins text-sm text-muted-foreground">{a.student_id}</td>
+                          <td className="py-4"><span className="bg-primary/10 text-primary font-poppins font-semibold text-xs px-3 py-1 rounded-full">{a.level}</span></td>
+                          <td className="py-4 font-poppins text-sm text-muted-foreground">{a.phone}</td>
+                          <td className="py-4 font-poppins text-sm text-muted-foreground">{a.event_title}</td>
+                          <td className="py-4 font-poppins text-sm text-muted-foreground max-w-[220px]">{a.reason || "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </main>
     </div>
   );
