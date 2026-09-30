@@ -11,9 +11,6 @@ const Hero = ({ onAttendClick }: { onAttendClick: () => void }) => {
       />
       <div className="absolute inset-0 bg-[rgba(0,0,0,0.35)]" />
       <div className="relative z-10 text-center px-4 max-w-3xl mx-auto">
-        <span className="inline-block bg-primary/20 border border-primary/40 text-primary font-poppins font-semibold text-sm px-5 py-2 rounded-full mb-8">
-          🟠 COMPSSA · CS Students Association
-        </span>
         <h1 className="font-poppins font-extrabold text-4xl sm:text-5xl md:text-[56px] leading-tight text-primary-foreground mb-6">
           Never Miss Another COMPSSA Event Again.
         </h1>
