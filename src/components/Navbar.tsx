@@ -49,7 +49,7 @@ const Navbar = ({ onAttendClick }: { onAttendClick?: () => void }) => {
         </div>
 
         {/* Mobile hamburger */}
-        <button onClick={() => setMobileOpen(!mobileOpen)} className="md:hidden text-primary-foreground p-2 min-w-[44px] min-h-[44px] flex items-center justify-center">
+        <button aria-label={mobileOpen ? "Close menu" : "Open menu"} aria-expanded={mobileOpen} onClick={() => setMobileOpen(!mobileOpen)} className="md:hidden text-primary-foreground p-2 min-w-[44px] min-h-[44px] flex items-center justify-center">
           <div className="space-y-1.5">
             <span className={`block w-6 h-0.5 bg-primary-foreground transition-transform ${mobileOpen ? "rotate-45 translate-y-2" : ""}`} />
             <span className={`block w-6 h-0.5 bg-primary-foreground transition-opacity ${mobileOpen ? "opacity-0" : ""}`} />
