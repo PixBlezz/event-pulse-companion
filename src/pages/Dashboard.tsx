@@ -27,15 +27,19 @@ interface Attendee {
 const Dashboard = () => {
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeNav, setActiveNav] = useState("overview");
 
   const load = async () => {
-    const { data } = await supabase
+    setLoading(true);
+    setLoadError(false);
+    const { data, error } = await supabase
       .from("attendees")
       .select("*")
       .order("created_at", { ascending: false });
-    setAttendees(data || []);
+    if (error) setLoadError(true);
+    else setAttendees(data || []);
     setLoading(false);
   };
 
@@ -130,7 +134,19 @@ const Dashboard = () => {
         </div>
 
         {loading ? (
-          <p className="font-poppins text-muted-foreground">Loading attendance data…</p>
+          <div aria-busy="true" aria-label="Loading attendance data" className="space-y-6">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {[0, 1, 2, 3].map((i) => <div key={i} className="h-24 bg-card rounded-xl border border-border animate-pulse" />)}
+            </div>
+            <div className="h-72 bg-card rounded-xl border border-border animate-pulse" />
+            <div className="h-64 bg-card rounded-xl border border-border animate-pulse" />
+          </div>
+        ) : loadError ? (
+          <div role="alert" className="bg-card rounded-xl border border-border p-8 text-center">
+            <p className="font-poppins font-bold text-card-foreground">We couldn't load the confirmations.</p>
+            <p className="font-poppins text-sm text-muted-foreground mt-1">Check your internet connection and try again.</p>
+            <button onClick={load} className="mt-5 bg-primary text-primary-foreground font-poppins font-bold text-sm px-6 py-2.5 rounded-full min-h-[44px]">Try Again</button>
+          </div>
         ) : (
           <>
             {/* Stats */}
