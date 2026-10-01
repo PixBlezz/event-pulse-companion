@@ -1,7 +1,7 @@
 import { useState } from "react";
 import AttendModal from "./AttendModal";
 
-const EVENTS = [
+export const EVENTS = [
   {
     title: "Industry Night with Tech Leaders",
     date: "Fri 14 Mar",
