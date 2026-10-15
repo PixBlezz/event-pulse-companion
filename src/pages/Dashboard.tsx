@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Logo from "@/components/Logo";
-import { EVENTS } from "@/components/EventsGrid";
+import { EVENTS } from "@/lib/events";
+import { uniqueConfirmations } from "@/lib/attendance";
+import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -46,9 +48,9 @@ const PIE_COLORS = [
   "hsl(var(--primary) / 0.5)",
 ];
 
-const card = "bg-card rounded-xl border border-border p-6";
+const card = "admin-panel";
 const h2 = "font-poppins font-bold text-lg text-card-foreground mb-6";
-const btnPrimary = "bg-primary text-primary-foreground font-poppins font-bold text-sm px-5 py-2.5 rounded-full hover:brightness-110 transition-all min-h-[44px] disabled:opacity-50";
+const btnPrimary = "bg-primary text-primary-foreground font-poppins font-bold text-sm px-5 py-2.5 rounded-md hover:brightness-110 transition-all min-h-[44px] disabled:opacity-50";
 const input = "font-poppins text-sm bg-background border border-input rounded-lg px-3 min-h-[44px] text-foreground focus:outline-none focus:ring-2 focus:ring-ring";
 const fmtDate = (d: string) => new Date(d).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
 
@@ -80,17 +82,31 @@ const Dashboard = () => {
   const [levelFilter, setLevelFilter] = useState("all");
   const [selected, setSelected] = useState<Attendee | null>(null);
   const [copied, setCopied] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (quiet = false) => {
+    if (!quiet) setLoading(true);
     setLoadError(false);
-    const { data, error } = await supabase.from("attendees").select("*").order("created_at", { ascending: false });
-    if (error) setLoadError(true);
-    else setAttendees(data || []);
+    const records: Attendee[] = [];
+    let failed = false;
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await supabase.from("attendees").select("*").order("created_at", { ascending: false }).order("id").range(offset, offset + 999);
+      if (error) { failed = true; break; }
+      records.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+    if (failed) setLoadError(true);
+    else { setAttendees(uniqueConfirmations(records)); setLastUpdated(new Date()); }
     setLoading(false);
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    void load();
+    const refresh = () => { if (!document.hidden) void load(true); };
+    const timer = window.setInterval(refresh, 15000);
+    window.addEventListener("focus", refresh);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", refresh); };
+  }, []);
 
   const eventCounts = useMemo(() => attendees.reduce<Record<string, number>>((acc, a) => {
     acc[a.event_title] = (acc[a.event_title] || 0) + 1;
@@ -129,8 +145,8 @@ const Dashboard = () => {
   const STATS = [
     { label: "Total Confirmations", value: String(attendees.length) },
     { label: "Signed Up Today", value: String(todayCount) },
-    { label: "Most Popular Level", value: Object.entries(levelCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "—" },
-    { label: "Latest Signup", value: attendees[0] ? fmtDate(attendees[0].created_at) : "—" },
+    { label: "Unique Students", value: String(new Set(attendees.map((a) => a.student_id.trim().toLowerCase())).size) },
+    { label: "Events Listed", value: String(EVENTS.length) },
   ];
 
   const go = (p: Page) => { setPage(p); setSidebarOpen(false); };
@@ -150,8 +166,8 @@ const Dashboard = () => {
       <>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           {STATS.map((s) => (
-            <div key={s.label} className="bg-card rounded-xl p-5 border border-border">
-              <p className="font-poppins font-extrabold text-2xl text-primary">{s.value}</p>
+            <div key={s.label} className="admin-stat bg-muted rounded-lg p-5 border border-border">
+              <p className="font-poppins font-bold text-3xl text-foreground">{s.value}</p>
               <p className="font-poppins text-sm text-muted-foreground mt-1">{s.label}</p>
             </div>
           ))}
@@ -177,7 +193,7 @@ const Dashboard = () => {
               <>
                 <p className="font-poppins font-extrabold text-xl text-card-foreground">{topEvent[0]}</p>
                 <p className="font-poppins text-sm text-muted-foreground mt-1">{topEvent[1]} people going</p>
-                <button onClick={() => viewEventPeople(topEvent[0])} className={`${btnPrimary} mt-6 w-full`}>See Who's Coming</button>
+                <Button variant="ghost" onClick={() => viewEventPeople(topEvent[0])} className={`${btnPrimary} mt-6 w-full`}>See Who's Coming</Button>
               </>
             ) : <Empty text="No signups yet." />}
           </div>
@@ -185,7 +201,7 @@ const Dashboard = () => {
         <div className={card}>
           <div className="flex items-center justify-between mb-6">
             <h2 className="font-poppins font-bold text-lg text-card-foreground">Latest Signups</h2>
-            <button onClick={() => go("attendees")} className="font-poppins text-sm font-semibold text-primary hover:underline min-h-[44px]">View all →</button>
+            <Button variant="ghost" onClick={() => go("attendees")} className="font-poppins text-sm font-semibold text-primary hover:underline min-h-[44px]">View all →</Button>
           </div>
           {attendees.length === 0 ? <Empty text="Once students fill the form, they'll appear here." /> : (
             <ul className="divide-y divide-border">
@@ -220,7 +236,7 @@ const Dashboard = () => {
             <option value="all">All levels</option>
             {levels.map((l) => <option key={l} value={l}>{l}</option>)}
           </select>
-          <button onClick={() => exportCSV(filtered)} disabled={filtered.length === 0} className={btnPrimary}>Export CSV</button>
+          <Button variant="ghost" onClick={() => exportCSV(filtered)} disabled={filtered.length === 0} className={btnPrimary}>Export CSV</Button>
         </div>
         <p className="font-poppins text-sm text-muted-foreground mb-4">Showing {filtered.length} of {attendees.length}</p>
         {filtered.length === 0 ? <Empty text={attendees.length === 0 ? "No one has confirmed yet." : "No matches. Try a different search or filter."} /> : (
@@ -238,11 +254,11 @@ const Dashboard = () => {
                   <tr key={a.id} className="border-b border-border last:border-0">
                     <td className="py-3 pr-4 font-poppins text-sm text-card-foreground font-semibold">{a.name}<span className="block font-normal text-xs text-muted-foreground">{a.email}</span></td>
                     <td className="py-3 pr-4 font-poppins text-sm text-muted-foreground">{a.student_id}</td>
-                    <td className="py-3 pr-4"><span className="bg-primary/10 text-primary font-poppins font-semibold text-xs px-3 py-1 rounded-full whitespace-nowrap">{a.level}</span></td>
+                    <td className="py-3 pr-4"><span className="bg-primary/10 text-primary font-poppins font-semibold text-xs px-3 py-1 rounded-md whitespace-nowrap">{a.level}</span></td>
                     <td className="py-3 pr-4 font-poppins text-sm text-muted-foreground whitespace-nowrap">{a.phone}</td>
                     <td className="py-3 pr-4 font-poppins text-sm text-muted-foreground">{a.event_title}</td>
                     <td className="py-3 pr-4 font-poppins text-sm text-muted-foreground whitespace-nowrap">{fmtDate(a.created_at)}</td>
-                    <td className="py-3"><button onClick={() => setSelected(a)} className="font-poppins text-sm font-semibold text-primary hover:underline min-h-[44px]">View</button></td>
+                    <td className="py-3"><Button variant="ghost" onClick={() => setSelected(a)} className="font-poppins text-sm font-semibold text-primary hover:underline min-h-[44px]">View</Button></td>
                   </tr>
                 ))}
               </tbody>
@@ -258,7 +274,7 @@ const Dashboard = () => {
           const ev = EVENTS.find((e) => e.title === title);
           const count = eventCounts[title] || 0;
           return (
-            <div key={title} className="bg-card rounded-xl border border-border overflow-hidden transition-all hover:scale-[1.02] hover:shadow-[var(--shadow-card-hover)]">
+            <div key={title} className="bg-card rounded-lg border border-border overflow-hidden transition-all hover:scale-[1.02] hover:shadow-[var(--shadow-card-hover)]">
               {ev && <img src={ev.image} alt={title} className="w-full h-36 object-cover" />}
               <div className="p-5">
                 {ev && <p className="font-poppins text-xs font-semibold text-primary mb-1">{ev.tag} · {ev.date} · 📍 {ev.venue}</p>}
@@ -266,8 +282,8 @@ const Dashboard = () => {
                 <p className="font-poppins font-extrabold text-3xl text-primary mt-3">{count}</p>
                 <p className="font-poppins text-sm text-muted-foreground">people going</p>
                 <div className="flex gap-2 mt-5">
-                  <button onClick={() => viewEventPeople(title)} className={`${btnPrimary} flex-1`}>See List</button>
-                  <button onClick={() => exportCSV(attendees.filter((a) => a.event_title === title), `${title}.csv`)} disabled={count === 0} className="font-poppins font-bold text-sm px-4 rounded-full border border-border text-card-foreground min-h-[44px] disabled:opacity-50">CSV</button>
+                  <Button variant="ghost" onClick={() => viewEventPeople(title)} className={`${btnPrimary} flex-1`}>See List</Button>
+                  <Button variant="ghost" onClick={() => exportCSV(attendees.filter((a) => a.event_title === title), `${title}.csv`)} disabled={count === 0} className="font-poppins font-bold text-sm px-4 rounded-md border border-border text-card-foreground min-h-[44px] disabled:opacity-50">CSV</Button>
                 </div>
               </div>
             </div>
@@ -325,18 +341,18 @@ const Dashboard = () => {
       <div className="space-y-6 max-w-2xl">
         <div className={card}>
           <h2 className={h2}>Your Secret Admin Link</h2>
-          <p className="font-poppins text-sm text-muted-foreground mb-4">Only people with this link can open the dashboard. Bookmark it and don't share it.</p>
+          <p className="font-poppins text-sm text-muted-foreground mb-4">This link is unlisted, not password-protected. Anyone who obtains it can open this page.</p>
           <div className="flex flex-col sm:flex-row gap-3">
             <input readOnly value={adminLink} aria-label="Admin link" className={`${input} flex-1`} />
-            <button onClick={copyLink} className={btnPrimary}>{copied ? "✓ Copied" : "Copy Link"}</button>
+            <Button variant="ghost" onClick={copyLink} className={btnPrimary}>{copied ? "✓ Copied" : "Copy Link"}</Button>
           </div>
         </div>
         <div className={card}>
           <h2 className={h2}>Data</h2>
           <p className="font-poppins text-sm text-muted-foreground mb-4">Download every confirmation as a spreadsheet you can open in Excel or Google Sheets.</p>
           <div className="flex gap-3">
-            <button onClick={() => exportCSV(attendees)} disabled={attendees.length === 0} className={btnPrimary}>Download All ({attendees.length})</button>
-            <button onClick={load} className="font-poppins font-bold text-sm px-5 rounded-full border border-border text-card-foreground min-h-[44px]">Refresh Data</button>
+            <Button variant="ghost" onClick={() => exportCSV(attendees)} disabled={attendees.length === 0} className={btnPrimary}>Download All ({attendees.length})</Button>
+            <Button variant="ghost" onClick={() => load()} className="font-poppins font-bold text-sm px-5 rounded-md border border-border text-card-foreground min-h-[44px]">Refresh Data</Button>
           </div>
         </div>
         <div className={card}>
@@ -348,19 +364,19 @@ const Dashboard = () => {
   };
 
   return (
-    <div className="min-h-screen flex bg-muted">
-      <button onClick={() => setSidebarOpen(!sidebarOpen)} aria-label={sidebarOpen ? "Close menu" : "Open menu"} aria-expanded={sidebarOpen} className="lg:hidden fixed top-4 left-4 z-50 bg-secondary text-secondary-foreground p-2 rounded-lg min-w-[44px] min-h-[44px]">
+    <div className="min-h-screen flex bg-background">
+      <Button variant="ghost" onClick={() => setSidebarOpen(!sidebarOpen)} aria-label={sidebarOpen ? "Close menu" : "Open menu"} aria-expanded={sidebarOpen} className="lg:hidden fixed top-4 left-4 z-50 bg-secondary text-secondary-foreground p-2 rounded-lg min-w-[44px] min-h-[44px]">
         {sidebarOpen ? "✕" : "☰"}
-      </button>
+      </Button>
 
       <aside className={`fixed lg:sticky lg:top-0 lg:h-screen inset-y-0 left-0 z-40 w-60 bg-secondary text-secondary-foreground flex flex-col transition-transform lg:translate-x-0 ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
         <div className="p-6 flex items-center gap-3 border-b border-sidebar-border">
           <Logo size={28} />
-          <span className="font-poppins font-bold text-sm">Event Pulse Admin</span>
+          <span className="font-poppins font-bold text-sm">Event Pulse</span>
         </div>
         <nav className="flex-1 p-4 space-y-1" aria-label="Admin sections">
           {NAV.map((item) => (
-            <button
+            <Button variant="ghost"
               key={item.id}
               onClick={() => go(item.id)}
               aria-current={page === item.id ? "page" : undefined}
@@ -370,47 +386,47 @@ const Dashboard = () => {
             >
               {item.label}
               {item.id === "attendees" && attendees.length > 0 && (
-                <span className="bg-primary text-primary-foreground text-xs font-bold px-2 py-0.5 rounded-full">{attendees.length}</span>
+                <span className="bg-primary text-primary-foreground text-xs font-bold px-2 py-0.5 rounded-md">{attendees.length}</span>
               )}
-            </button>
+            </Button>
           ))}
         </nav>
         <div className="p-4 border-t border-sidebar-border">
-          <p className="font-poppins text-xs text-secondary-foreground/50 mb-2">COMPSSA Admin · Secret link — don't share</p>
+          <p className="font-poppins text-xs text-secondary-foreground/50 mb-2">COMPSSA · Administration</p>
           <Link to="/" className="font-poppins text-xs text-primary hover:underline">← Back to site</Link>
         </div>
       </aside>
 
       {sidebarOpen && <div className="fixed inset-0 z-30 bg-secondary/50 lg:hidden" onClick={() => setSidebarOpen(false)} aria-hidden="true" />}
 
-      <main className="flex-1 p-6 lg:p-10 overflow-auto min-w-0">
+      <main className="flex-1 p-5 lg:p-10 overflow-auto min-w-0 max-w-[1600px]">
         <div className="flex items-center justify-between mb-8 ml-12 lg:ml-0 gap-4">
           <div>
             <h1 className="font-poppins font-extrabold text-2xl text-foreground">{TITLES[page]}</h1>
-            <p className="font-poppins text-sm text-muted-foreground">COMPSSA Event Pulse</p>
+            <p className="font-poppins text-xs text-muted-foreground mt-2" role="status">{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · Every 15 seconds` : "Connecting to attendance records"}</p>
           </div>
-          <button onClick={load} className="font-poppins font-semibold text-sm px-4 rounded-full border border-border bg-card text-card-foreground min-h-[44px]">↻ Refresh</button>
+          <Button variant="ghost" onClick={() => load()} className="font-poppins font-semibold text-sm px-4 rounded-md border border-border bg-card text-card-foreground min-h-[44px]">↻ Refresh</Button>
         </div>
 
         {loading ? (
           <div aria-busy="true" aria-label="Loading data" className="space-y-6">
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              {[0, 1, 2, 3].map((i) => <div key={i} className="h-24 bg-card rounded-xl border border-border animate-pulse" />)}
+              {[0, 1, 2, 3].map((i) => <div key={i} className="h-24 bg-card rounded-lg border border-border animate-pulse" />)}
             </div>
-            <div className="h-72 bg-card rounded-xl border border-border animate-pulse" />
+            <div className="h-72 bg-card rounded-lg border border-border animate-pulse" />
           </div>
         ) : loadError ? (
           <div role="alert" className={`${card} text-center`}>
             <p className="font-poppins font-bold text-card-foreground">We couldn't load the confirmations.</p>
             <p className="font-poppins text-sm text-muted-foreground mt-1">Check your internet connection and try again.</p>
-            <button onClick={load} className={`${btnPrimary} mt-5`}>Try Again</button>
+            <Button variant="ghost" onClick={() => load()} className={`${btnPrimary} mt-5`}>Try Again</Button>
           </div>
         ) : renderPage()}
       </main>
 
       {selected && (
         <div className="fixed inset-0 z-50 bg-secondary/60 flex items-center justify-center p-4" onClick={() => setSelected(null)}>
-          <div role="dialog" aria-modal="true" aria-label={`Details for ${selected.name}`} className="bg-card rounded-2xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+          <div role="dialog" aria-modal="true" aria-label={`Details for ${selected.name}`} className="bg-card rounded-lg p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center gap-3 mb-6">
               <span className="w-12 h-12 rounded-full bg-primary text-primary-foreground font-poppins font-bold text-lg flex items-center justify-center">{selected.name.charAt(0).toUpperCase()}</span>
               <div>
@@ -435,7 +451,7 @@ const Dashboard = () => {
             </dl>
             <div className="flex gap-3 mt-6">
               <a href={`https://wa.me/${selected.phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer" className={`${btnPrimary} flex-1 text-center flex items-center justify-center`}>Message on WhatsApp</a>
-              <button onClick={() => setSelected(null)} className="font-poppins font-bold text-sm px-5 rounded-full border border-border text-card-foreground min-h-[44px]">Close</button>
+              <Button variant="ghost" onClick={() => setSelected(null)} className="font-poppins font-bold text-sm px-5 rounded-md border border-border text-card-foreground min-h-[44px]">Close</Button>
             </div>
           </div>
         </div>
