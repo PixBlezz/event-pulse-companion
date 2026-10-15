@@ -1,5 +1,8 @@
 import { useState } from "react";
 import Logo from "./Logo";
+import { Button } from "@/components/ui/button";
+import { useQueryClient } from "@tanstack/react-query";
+import { EVENTS } from "@/lib/events";
 import { supabase } from "@/integrations/supabase/client";
 
 interface AttendModalProps {
@@ -14,6 +17,8 @@ const emptyForm = { name: "", email: "", studentId: "", level: "", phone: "", re
 
 const AttendModal = ({ open, onClose, eventTitle }: AttendModalProps) => {
   const [form, setForm] = useState(emptyForm);
+  const queryClient = useQueryClient();
+  const [chosenEvent, setChosenEvent] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -40,10 +45,12 @@ const AttendModal = ({ open, onClose, eventTitle }: AttendModalProps) => {
 
   const handleSubmit = async () => {
     if (!validate() || submitting) return;
+    const title = eventTitle || chosenEvent;
+    if (!title) { setSubmitError("Please choose an event."); return; }
     setSubmitting(true);
     setSubmitError("");
     const { error } = await supabase.from("attendees").insert({
-      event_title: eventTitle || "General",
+      event_title: title,
       name: form.name.trim().slice(0, 100),
       email: form.email.trim().slice(0, 255),
       student_id: form.studentId.trim().slice(0, 20),
@@ -53,10 +60,11 @@ const AttendModal = ({ open, onClose, eventTitle }: AttendModalProps) => {
     });
     setSubmitting(false);
     if (error) {
-      setSubmitError("Something went wrong. Please try again.");
+      setSubmitError(error.code === "23505" ? "You have already confirmed for this event." : "We couldn’t save your confirmation. Please try again.");
       return;
     }
     setSubmitted(true);
+    await queryClient.invalidateQueries({ queryKey: ["attendance-totals"] });
   };
 
   const handleClose = () => {
@@ -64,11 +72,12 @@ const AttendModal = ({ open, onClose, eventTitle }: AttendModalProps) => {
     setErrors({});
     setSubmitError("");
     setForm(emptyForm);
+    setChosenEvent("");
     onClose();
   };
 
   const inputClass = (key: keyof typeof emptyForm) =>
-    `w-full px-4 py-3 rounded-xl border font-poppins text-sm bg-background text-foreground placeholder:text-muted-foreground min-h-[44px] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${errors[key] ? "border-destructive" : "border-input"}`;
+    `w-full px-4 py-3 rounded-md border font-poppins text-sm bg-background text-foreground placeholder:text-muted-foreground min-h-[44px] focus:outline-none focus-visible:ring-2 focus-visible:ring-ring ${errors[key] ? "border-destructive" : "border-input"}`;
 
   const field = (key: keyof typeof emptyForm, label: string, input: React.ReactNode) => (
     <div className="mb-4">
@@ -85,12 +94,12 @@ const AttendModal = ({ open, onClose, eventTitle }: AttendModalProps) => {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-secondary/60 backdrop-blur-sm" onClick={handleClose} onKeyDown={(e) => e.key === "Escape" && handleClose()}>
-      <div role="dialog" aria-modal="true" aria-labelledby="attend-title" className="bg-card rounded-3xl shadow-2xl max-w-[440px] w-full mx-4 p-8 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div role="dialog" aria-modal="true" aria-labelledby="attend-title" className="bg-card rounded-lg shadow-2xl max-w-[440px] w-full mx-4 p-6 sm:p-8 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3 mb-4">
           <Logo size={32} />
           <h2 id="attend-title" className="font-poppins font-extrabold text-xl text-card-foreground">Confirm Your Attendance</h2>
         </div>
-        {eventTitle && <p className="font-poppins font-semibold text-primary text-sm mb-1">{eventTitle}</p>}
+        {(eventTitle || chosenEvent) && <p className="font-poppins font-semibold text-primary text-sm mb-1">{eventTitle || chosenEvent}</p>}
         <p className="font-poppins text-muted-foreground text-sm mb-6">Takes under a minute — no account needed.</p>
 
         {submitted ? (
@@ -100,10 +109,11 @@ const AttendModal = ({ open, onClose, eventTitle }: AttendModalProps) => {
             </div>
             <p className="font-poppins font-bold text-lg text-card-foreground">🎉 You're confirmed!</p>
             <p className="font-poppins text-muted-foreground text-sm mt-2">See you there, {form.name.split(" ")[0]}!</p>
-            <button autoFocus onClick={handleClose} className="mt-6 bg-primary text-primary-foreground font-poppins font-bold px-8 py-3 rounded-full min-h-[44px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">Done</button>
+            <Button variant="ghost" autoFocus onClick={handleClose} className="mt-6 bg-primary text-primary-foreground font-poppins font-bold px-8 py-3 rounded-md min-h-[44px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2">Done</Button>
           </div>
         ) : (
           <form noValidate onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
+            {!eventTitle && <div className="mb-4"><label htmlFor="attendance-event" className="block font-semibold text-xs mb-1.5">Event</label><select id="attendance-event" value={chosenEvent} onChange={(e) => { setChosenEvent(e.target.value); setSubmitError(""); }} className={inputClass("name")}><option value="">Choose an event</option>{EVENTS.map((event) => <option key={event.title}>{event.title}</option>)}</select></div>}
             {field("name", "Full name", <input autoFocus {...aria("name")} value={form.name} onChange={set("name")} autoComplete="name" placeholder="e.g. Kwame Mensah" maxLength={100} className={inputClass("name")} />)}
             {field("email", "Email", <input {...aria("email")} value={form.email} onChange={set("email")} type="email" autoComplete="email" placeholder="e.g. kwame@st.ug.edu.gh" maxLength={255} className={inputClass("email")} />)}
             {field("studentId", "Student ID", <input {...aria("studentId")} value={form.studentId} onChange={set("studentId")} inputMode="numeric" placeholder="e.g. 10987654" maxLength={20} className={inputClass("studentId")} />)}
@@ -114,19 +124,19 @@ const AttendModal = ({ open, onClose, eventTitle }: AttendModalProps) => {
               </select>
             ))}
             {field("phone", "WhatsApp number", <input {...aria("phone")} value={form.phone} onChange={set("phone")} type="tel" autoComplete="tel" placeholder="e.g. 024 123 4567" maxLength={20} className={inputClass("phone")} />)}
-            {field("reason", "Why are you attending? (optional)", <textarea id="f-reason" value={form.reason} onChange={set("reason")} placeholder="e.g. I want to meet people in tech" maxLength={500} rows={3} className="w-full px-4 py-3 rounded-xl border border-input font-poppins text-sm bg-background text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring" />)}
+            {field("reason", "Why are you attending? (optional)", <textarea id="f-reason" value={form.reason} onChange={set("reason")} placeholder="e.g. I want to meet people in tech" maxLength={500} rows={3} className="w-full px-4 py-3 rounded-md border border-input font-poppins text-sm bg-background text-foreground placeholder:text-muted-foreground resize-none focus:outline-none focus-visible:ring-2 focus-visible:ring-ring" />)}
 
             {submitError && <p role="alert" className="text-destructive text-sm font-poppins mb-4 text-center">{submitError}</p>}
 
-            <button
+            <Button variant="ghost"
               type="submit"
               disabled={submitting}
               aria-busy={submitting}
-              className="w-full mt-2 bg-primary text-primary-foreground font-poppins font-bold text-base py-3.5 rounded-full hover:brightness-110 transition-all active:scale-[0.98] min-h-[44px] disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              className="w-full mt-2 bg-primary text-primary-foreground font-poppins font-bold text-base py-3.5 rounded-md hover:brightness-110 transition-all active:scale-[0.98] min-h-[44px] disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             >
               {submitting ? "Confirming..." : "Yes, I Am Attending ✓"}
-            </button>
-            <button type="button" onClick={handleClose} className="w-full text-center text-muted-foreground text-sm font-poppins mt-3 min-h-[44px] hover:text-foreground transition-colors">Cancel</button>
+            </Button>
+            <Button variant="ghost" type="button" onClick={handleClose} className="w-full text-center text-muted-foreground text-sm font-poppins mt-3 min-h-[44px] hover:text-foreground transition-colors">Cancel</Button>
           </form>
         )}
       </div>

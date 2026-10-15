@@ -1,14 +1,14 @@
 const FEATURES = [
-  { title: "Events Posted in Seconds", desc: "The COMPSSA rep publishes structured events instantly." },
-  { title: "You Get an Email Alert", desc: "Automated email via Gmail the moment an event goes live." },
-  { title: "Browser Reminders Too", desc: "Push notification pops up 1 hour before it starts." },
+  { title: "Meet Your CS Community", desc: "Workshops, seminars and shared experiences bring us together." },
+  { title: "A Place for Every Level", desc: "From your first year to postgraduate studies, you belong here." },
+  { title: "More Than the Lecture Hall", desc: "Connect with people who share your curiosity and ambition." },
   { title: "Rep Sees Who's Coming", desc: "Live count of confirmed attendees before every event." },
 ];
 
 const Features = () => (
   <section id="about" className="py-20 bg-background">
     <div className="container mx-auto">
-      <div className="grid md:grid-cols-2 gap-0 rounded-3xl overflow-hidden fade-up">
+      <div className="grid md:grid-cols-2 gap-0  overflow-hidden fade-up">
         <div className="h-80 md:h-auto">
           <img
             src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?w=800"
