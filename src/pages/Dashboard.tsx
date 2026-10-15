@@ -87,9 +87,16 @@ const Dashboard = () => {
   const load = async (quiet = false) => {
     if (!quiet) setLoading(true);
     setLoadError(false);
-    const { data, error } = await supabase.from("attendees").select("*").order("created_at", { ascending: false });
-    if (error) setLoadError(true);
-    else { setAttendees(uniqueConfirmations(data || [])); setLastUpdated(new Date()); }
+    const records: Attendee[] = [];
+    let failed = false;
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await supabase.from("attendees").select("*").order("created_at", { ascending: false }).order("id").range(offset, offset + 999);
+      if (error) { failed = true; break; }
+      records.push(...(data || []));
+      if (!data || data.length < 1000) break;
+    }
+    if (failed) setLoadError(true);
+    else { setAttendees(uniqueConfirmations(records)); setLastUpdated(new Date()); }
     setLoading(false);
   };
 
