@@ -23,6 +23,7 @@ const AttendModal = ({ open, onClose, eventTitle }: AttendModalProps) => {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [errors, setErrors] = useState<Partial<typeof emptyForm>>({});
+  const events = useEvents();
 
   if (!open) return null;
 

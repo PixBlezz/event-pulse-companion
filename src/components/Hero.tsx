@@ -19,7 +19,7 @@ const Hero = ({ onAttendClick }: { onAttendClick: () => void }) => {
             <Button size="lg" variant="ghost" onClick={onAttendClick} className="border border-primary-foreground/40 text-primary-foreground hover:bg-primary-foreground/10 hover:text-primary-foreground">Yes, I Am Attending</Button>
           </div>
           <div className="flex flex-wrap gap-x-8 gap-y-4 border-t border-primary-foreground/20 pt-6 text-primary-foreground">
-            <div><strong className="text-2xl font-bold tabular-nums">{EVENTS.length}</strong><p className="text-xs text-primary-foreground/75 mt-1">Events listed</p></div>
+            <div><strong className="text-2xl font-bold tabular-nums">{events.data?.length ?? "—"}</strong><p className="text-xs text-primary-foreground/75 mt-1">Events listed</p></div>
             <div><strong className="text-2xl font-bold tabular-nums">{totals.data?.students ?? "—"}</strong><p className="text-xs text-primary-foreground/75 mt-1">Students confirmed</p></div>
             <div><strong className="text-2xl font-bold tabular-nums">{totals.data?.confirmations ?? "—"}</strong><p className="text-xs text-primary-foreground/75 mt-1">Event confirmations</p></div>
           </div>
