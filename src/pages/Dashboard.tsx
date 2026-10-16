@@ -554,6 +554,20 @@ const Dashboard = () => {
           </div>
         </div>
       )}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 bg-secondary/60 flex items-center justify-center p-4" onClick={() => setConfirmDelete(null)}>
+          <div role="alertdialog" aria-modal="true" aria-label={`Delete ${confirmDelete.title}`} className="bg-card rounded-lg p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-poppins font-bold text-lg text-card-foreground mb-2">Delete "{confirmDelete.title}"?</h2>
+            <p className="font-poppins text-sm text-muted-foreground mb-6">The event disappears from the homepage immediately. People who already confirmed stay in your records.</p>
+            <div className="flex gap-3">
+              <Button variant="ghost" onClick={() => void deleteEvent(confirmDelete)} disabled={deletingId === confirmDelete.id} aria-busy={deletingId === confirmDelete.id} className="flex-1 bg-destructive text-destructive-foreground font-poppins font-bold text-sm px-5 rounded-md min-h-[44px] hover:brightness-110 disabled:opacity-50">
+                {deletingId === confirmDelete.id ? "Deleting…" : "Yes, Delete It"}
+              </Button>
+              <Button variant="ghost" autoFocus onClick={() => setConfirmDelete(null)} className="font-poppins font-bold text-sm px-5 rounded-md border border-border text-card-foreground min-h-[44px]">Keep It</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
