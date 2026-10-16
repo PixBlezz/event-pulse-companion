@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Logo from "@/components/Logo";
-import { EVENTS } from "@/lib/events";
+import { useEvents, type EventItem } from "@/hooks/useEvents";
+import { useQueryClient } from "@tanstack/react-query";
 import { uniqueConfirmations } from "@/lib/attendance";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -83,6 +84,58 @@ const Dashboard = () => {
   const [selected, setSelected] = useState<Attendee | null>(null);
   const [copied, setCopied] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const eventsQuery = useEvents();
+  const events = eventsQuery.data ?? [];
+  const queryClient = useQueryClient();
+  const emptyEvent = { title: "", event_date: "", venue: "", tag: "Workshop", image: "", description: "" };
+  const [eventForm, setEventForm] = useState(emptyEvent);
+  const [eventErrors, setEventErrors] = useState<Partial<typeof emptyEvent>>({});
+  const [savingEvent, setSavingEvent] = useState(false);
+  const [eventFormError, setEventFormError] = useState("");
+  const [eventNotice, setEventNotice] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<EventItem | null>(null);
+
+  const validateEvent = () => {
+    const e: Partial<typeof emptyEvent> = {};
+    if (!eventForm.title.trim()) e.title = "Please enter the event title";
+    if (!eventForm.event_date.trim()) e.event_date = "Please enter the date";
+    if (!eventForm.venue.trim()) e.venue = "Please enter the venue";
+    if (!eventForm.image.trim()) e.image = "Please add an image link";
+    if (!eventForm.description.trim()) e.description = "Please add a short description";
+    setEventErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const createEvent = async () => {
+    if (!validateEvent() || savingEvent) return;
+    setSavingEvent(true);
+    setEventFormError("");
+    setEventNotice("");
+    const { error } = await supabase.from("events").insert({
+      title: eventForm.title.trim().slice(0, 120),
+      event_date: eventForm.event_date.trim().slice(0, 60),
+      venue: eventForm.venue.trim().slice(0, 120),
+      tag: eventForm.tag,
+      image: eventForm.image.trim().slice(0, 500),
+      description: eventForm.description.trim().slice(0, 500),
+    });
+    setSavingEvent(false);
+    if (error) { setEventFormError("We couldn't save the event. Please try again."); return; }
+    setEventForm(emptyEvent);
+    setEventNotice("Event published — it's live on the homepage now.");
+    await queryClient.invalidateQueries({ queryKey: ["events"] });
+  };
+
+  const deleteEvent = async (ev: EventItem) => {
+    setDeletingId(ev.id);
+    const { error } = await supabase.from("events").delete().eq("id", ev.id);
+    setDeletingId(null);
+    setConfirmDelete(null);
+    if (error) { setEventFormError("We couldn't delete that event. Please try again."); return; }
+    setEventNotice(`"${ev.title}" was removed from the site.`);
+    await queryClient.invalidateQueries({ queryKey: ["events"] });
+  };
 
   const load = async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -136,7 +189,7 @@ const Dashboard = () => {
     );
   }, [attendees, search, eventFilter, levelFilter]);
 
-  const allEventTitles = Array.from(new Set([...EVENTS.map((e) => e.title), ...Object.keys(eventCounts)]));
+  const allEventTitles = Array.from(new Set([...events.map((e) => e.title), ...Object.keys(eventCounts)]));
   const levels = Object.keys(levelCounts).sort();
   const today = new Date().toDateString();
   const todayCount = attendees.filter((a) => new Date(a.created_at).toDateString() === today).length;
@@ -146,7 +199,7 @@ const Dashboard = () => {
     { label: "Total Confirmations", value: String(attendees.length) },
     { label: "Signed Up Today", value: String(todayCount) },
     { label: "Unique Students", value: String(new Set(attendees.map((a) => a.student_id.trim().toLowerCase())).size) },
-    { label: "Events Listed", value: String(EVENTS.length) },
+    { label: "Events Listed", value: String(events.length) },
   ];
 
   const go = (p: Page) => { setPage(p); setSidebarOpen(false); };
@@ -269,26 +322,71 @@ const Dashboard = () => {
     );
 
     if (page === "events") return (
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {allEventTitles.map((title) => {
-          const ev = EVENTS.find((e) => e.title === title);
-          const count = eventCounts[title] || 0;
-          return (
-            <div key={title} className="bg-card rounded-lg border border-border overflow-hidden transition-all hover:scale-[1.02] hover:shadow-[var(--shadow-card-hover)]">
-              {ev && <img src={ev.image} alt={title} className="w-full h-36 object-cover" />}
-              <div className="p-5">
-                {ev && <p className="font-poppins text-xs font-semibold text-primary mb-1">{ev.tag} · {ev.date} · 📍 {ev.venue}</p>}
-                <h3 className="font-poppins font-bold text-card-foreground">{title}</h3>
-                <p className="font-poppins font-extrabold text-3xl text-primary mt-3">{count}</p>
-                <p className="font-poppins text-sm text-muted-foreground">people going</p>
-                <div className="flex gap-2 mt-5">
-                  <Button variant="ghost" onClick={() => viewEventPeople(title)} className={`${btnPrimary} flex-1`}>See List</Button>
-                  <Button variant="ghost" onClick={() => exportCSV(attendees.filter((a) => a.event_title === title), `${title}.csv`)} disabled={count === 0} className="font-poppins font-bold text-sm px-4 rounded-md border border-border text-card-foreground min-h-[44px] disabled:opacity-50">CSV</Button>
-                </div>
+      <div className="space-y-6">
+        <div className={card}>
+          <h2 className={h2}>Post a New Event</h2>
+          <form noValidate onSubmit={(e) => { e.preventDefault(); void createEvent(); }} className="grid md:grid-cols-2 gap-4">
+            {([
+              ["title", "Event title", "e.g. COMPSSA Career Fair", "text"],
+              ["event_date", "Date", "e.g. Fri 21 Nov", "text"],
+              ["venue", "Venue", "e.g. CS Auditorium", "text"],
+              ["image", "Image link", "https://…", "url"],
+            ] as const).map(([key, label, placeholder, type]) => (
+              <div key={key}>
+                <label htmlFor={`ev-${key}`} className="block font-poppins font-semibold text-xs text-card-foreground mb-1.5">{label}</label>
+                <input id={`ev-${key}`} type={type} value={eventForm[key]} aria-invalid={!!eventErrors[key]} aria-describedby={eventErrors[key] ? `ev-err-${key}` : undefined}
+                  onChange={(e) => { setEventForm((p) => ({ ...p, [key]: e.target.value })); setEventErrors((p) => ({ ...p, [key]: undefined })); }}
+                  placeholder={placeholder} className={`${input} w-full ${eventErrors[key] ? "border-destructive" : ""}`} />
+                {eventErrors[key] && <p id={`ev-err-${key}`} role="alert" className="text-destructive text-xs mt-1 font-poppins">{eventErrors[key]}</p>}
               </div>
+            ))}
+            <div>
+              <label htmlFor="ev-tag" className="block font-poppins font-semibold text-xs text-card-foreground mb-1.5">Event type</label>
+              <select id="ev-tag" value={eventForm.tag} onChange={(e) => setEventForm((p) => ({ ...p, tag: e.target.value }))} className={`${input} w-full`}>
+                {["Workshop", "Seminar", "Hackathon", "Meeting", "Social"].map((t) => <option key={t}>{t}</option>)}
+              </select>
             </div>
-          );
-        })}
+            <div className="md:col-span-2">
+              <label htmlFor="ev-description" className="block font-poppins font-semibold text-xs text-card-foreground mb-1.5">Description</label>
+              <textarea id="ev-description" value={eventForm.description} rows={3} maxLength={500} aria-invalid={!!eventErrors.description} aria-describedby={eventErrors.description ? "ev-err-description" : undefined}
+                onChange={(e) => { setEventForm((p) => ({ ...p, description: e.target.value })); setEventErrors((p) => ({ ...p, description: undefined })); }}
+                placeholder="What is this event about?" className={`${input} w-full py-3 resize-none ${eventErrors.description ? "border-destructive" : ""}`} />
+              {eventErrors.description && <p id="ev-err-description" role="alert" className="text-destructive text-xs mt-1 font-poppins">{eventErrors.description}</p>}
+            </div>
+            <div className="md:col-span-2 flex flex-col sm:flex-row items-start sm:items-center gap-3">
+              <Button variant="ghost" type="submit" disabled={savingEvent} aria-busy={savingEvent} className={btnPrimary}>{savingEvent ? "Publishing…" : "Publish Event"}</Button>
+              {eventFormError && <p role="alert" className="text-destructive text-sm font-poppins">{eventFormError}</p>}
+              {eventNotice && <p role="status" className="text-success text-sm font-poppins">{eventNotice}</p>}
+            </div>
+          </form>
+        </div>
+
+        {events.length === 0 && allEventTitles.length === 0 ? (
+          <div className={card}><Empty text="No events yet — publish your first one above." /></div>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {allEventTitles.map((title) => {
+              const ev = events.find((e) => e.title === title);
+              const count = eventCounts[title] || 0;
+              return (
+                <div key={title} className="bg-card rounded-lg border border-border overflow-hidden transition-all hover:scale-[1.02] hover:shadow-[var(--shadow-card-hover)]">
+                  {ev && <img src={ev.image} alt={title} className="w-full h-36 object-cover" />}
+                  <div className="p-5">
+                    {ev && <p className="font-poppins text-xs font-semibold text-primary mb-1">{ev.tag} · {ev.event_date} · 📍 {ev.venue}</p>}
+                    <h3 className="font-poppins font-bold text-card-foreground">{title}</h3>
+                    <p className="font-poppins font-extrabold text-3xl text-primary mt-3">{count}</p>
+                    <p className="font-poppins text-sm text-muted-foreground">people going</p>
+                    <div className="flex gap-2 mt-5">
+                      <Button variant="ghost" onClick={() => viewEventPeople(title)} className={`${btnPrimary} flex-1`}>See List</Button>
+                      <Button variant="ghost" onClick={() => exportCSV(attendees.filter((a) => a.event_title === title), `${title}.csv`)} disabled={count === 0} className="font-poppins font-bold text-sm px-4 rounded-md border border-border text-card-foreground min-h-[44px] disabled:opacity-50">CSV</Button>
+                      {ev && <Button variant="ghost" onClick={() => setConfirmDelete(ev)} aria-label={`Delete ${title}`} className="font-poppins font-bold text-sm px-4 rounded-md border border-destructive/40 text-destructive min-h-[44px] hover:bg-destructive/10">Delete</Button>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     );
 
@@ -357,7 +455,7 @@ const Dashboard = () => {
         </div>
         <div className={card}>
           <h2 className={h2}>About</h2>
-          <p className="font-poppins text-sm text-muted-foreground">COMPSSA Event Pulse · Admin dashboard · {EVENTS.length} events listed on the site.</p>
+          <p className="font-poppins text-sm text-muted-foreground">COMPSSA Event Pulse · Admin dashboard · {events.length} events listed on the site.</p>
         </div>
       </div>
     );
@@ -452,6 +550,20 @@ const Dashboard = () => {
             <div className="flex gap-3 mt-6">
               <a href={`https://wa.me/${selected.phone.replace(/\D/g, "")}`} target="_blank" rel="noreferrer" className={`${btnPrimary} flex-1 text-center flex items-center justify-center`}>Message on WhatsApp</a>
               <Button variant="ghost" onClick={() => setSelected(null)} className="font-poppins font-bold text-sm px-5 rounded-md border border-border text-card-foreground min-h-[44px]">Close</Button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmDelete && (
+        <div className="fixed inset-0 z-50 bg-secondary/60 flex items-center justify-center p-4" onClick={() => setConfirmDelete(null)}>
+          <div role="alertdialog" aria-modal="true" aria-label={`Delete ${confirmDelete.title}`} className="bg-card rounded-lg p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
+            <h2 className="font-poppins font-bold text-lg text-card-foreground mb-2">Delete "{confirmDelete.title}"?</h2>
+            <p className="font-poppins text-sm text-muted-foreground mb-6">The event disappears from the homepage immediately. People who already confirmed stay in your records.</p>
+            <div className="flex gap-3">
+              <Button variant="ghost" onClick={() => void deleteEvent(confirmDelete)} disabled={deletingId === confirmDelete.id} aria-busy={deletingId === confirmDelete.id} className="flex-1 bg-destructive text-destructive-foreground font-poppins font-bold text-sm px-5 rounded-md min-h-[44px] hover:brightness-110 disabled:opacity-50">
+                {deletingId === confirmDelete.id ? "Deleting…" : "Yes, Delete It"}
+              </Button>
+              <Button variant="ghost" autoFocus onClick={() => setConfirmDelete(null)} className="font-poppins font-bold text-sm px-5 rounded-md border border-border text-card-foreground min-h-[44px]">Keep It</Button>
             </div>
           </div>
         </div>
