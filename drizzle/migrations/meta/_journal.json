@@ -15,6 +15,13 @@
       "when": 1792048310078,
       "tag": "0001_live_attendance_totals",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792139670065,
+      "tag": "0002_create_events",
+      "breakpoints": true
     }
   ]
 }
