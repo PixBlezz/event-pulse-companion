@@ -1,9 +1,10 @@
 import { Button } from "@/components/ui/button";
 import { useAttendanceTotals } from "@/hooks/useAttendanceTotals";
-import { EVENTS } from "@/lib/events";
+import { useEvents } from "@/hooks/useEvents";
 
 const Hero = ({ onAttendClick }: { onAttendClick: () => void }) => {
   const totals = useAttendanceTotals();
+  const events = useEvents();
   return (
     <section className="relative flex items-center min-h-[620px] h-[78vh] max-h-[820px] overflow-hidden bg-secondary">
       <img src="https://images.unsplash.com/photo-1523580494863-6f3031224c94?w=1800" alt="Students gathering at a university event" className="absolute inset-0 w-full h-full object-cover" />

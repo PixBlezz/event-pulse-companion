@@ -2,7 +2,7 @@ import { useState } from "react";
 import Logo from "./Logo";
 import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
-import { EVENTS } from "@/lib/events";
+import { useEvents } from "@/hooks/useEvents";
 import { supabase } from "@/integrations/supabase/client";
 
 interface AttendModalProps {
