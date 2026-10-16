@@ -189,7 +189,7 @@ const Dashboard = () => {
     );
   }, [attendees, search, eventFilter, levelFilter]);
 
-  const allEventTitles = Array.from(new Set([...EVENTS.map((e) => e.title), ...Object.keys(eventCounts)]));
+  const allEventTitles = Array.from(new Set([...events.map((e) => e.title), ...Object.keys(eventCounts)]));
   const levels = Object.keys(levelCounts).sort();
   const today = new Date().toDateString();
   const todayCount = attendees.filter((a) => new Date(a.created_at).toDateString() === today).length;
@@ -199,7 +199,7 @@ const Dashboard = () => {
     { label: "Total Confirmations", value: String(attendees.length) },
     { label: "Signed Up Today", value: String(todayCount) },
     { label: "Unique Students", value: String(new Set(attendees.map((a) => a.student_id.trim().toLowerCase())).size) },
-    { label: "Events Listed", value: String(EVENTS.length) },
+    { label: "Events Listed", value: String(events.length) },
   ];
 
   const go = (p: Page) => { setPage(p); setSidebarOpen(false); };
