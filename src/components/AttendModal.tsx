@@ -114,7 +114,7 @@ const AttendModal = ({ open, onClose, eventTitle }: AttendModalProps) => {
           </div>
         ) : (
           <form noValidate onSubmit={(e) => { e.preventDefault(); handleSubmit(); }}>
-            {!eventTitle && <div className="mb-4"><label htmlFor="attendance-event" className="block font-semibold text-xs mb-1.5">Event</label><select id="attendance-event" value={chosenEvent} onChange={(e) => { setChosenEvent(e.target.value); setSubmitError(""); }} className={inputClass("name")}><option value="">Choose an event</option>{EVENTS.map((event) => <option key={event.title}>{event.title}</option>)}</select></div>}
+            {!eventTitle && <div className="mb-4"><label htmlFor="attendance-event" className="block font-semibold text-xs mb-1.5">Event</label><select id="attendance-event" value={chosenEvent} onChange={(e) => { setChosenEvent(e.target.value); setSubmitError(""); }} className={inputClass("name")}><option value="">Choose an event</option>{(events.data ?? []).map((event) => <option key={event.id}>{event.title}</option>)}</select></div>}
             {field("name", "Full name", <input autoFocus {...aria("name")} value={form.name} onChange={set("name")} autoComplete="name" placeholder="e.g. Kwame Mensah" maxLength={100} className={inputClass("name")} />)}
             {field("email", "Email", <input {...aria("email")} value={form.email} onChange={set("email")} type="email" autoComplete="email" placeholder="e.g. kwame@st.ug.edu.gh" maxLength={255} className={inputClass("email")} />)}
             {field("studentId", "Student ID", <input {...aria("studentId")} value={form.studentId} onChange={set("studentId")} inputMode="numeric" placeholder="e.g. 10987654" maxLength={20} className={inputClass("studentId")} />)}
