@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Logo from "@/components/Logo";
-import { EVENTS } from "@/lib/events";
+import { useEvents, type EventItem } from "@/hooks/useEvents";
+import { useQueryClient } from "@tanstack/react-query";
 import { uniqueConfirmations } from "@/lib/attendance";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
@@ -83,6 +84,58 @@ const Dashboard = () => {
   const [selected, setSelected] = useState<Attendee | null>(null);
   const [copied, setCopied] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const eventsQuery = useEvents();
+  const events = eventsQuery.data ?? [];
+  const queryClient = useQueryClient();
+  const emptyEvent = { title: "", event_date: "", venue: "", tag: "Workshop", image: "", description: "" };
+  const [eventForm, setEventForm] = useState(emptyEvent);
+  const [eventErrors, setEventErrors] = useState<Partial<typeof emptyEvent>>({});
+  const [savingEvent, setSavingEvent] = useState(false);
+  const [eventFormError, setEventFormError] = useState("");
+  const [eventNotice, setEventNotice] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<EventItem | null>(null);
+
+  const validateEvent = () => {
+    const e: Partial<typeof emptyEvent> = {};
+    if (!eventForm.title.trim()) e.title = "Please enter the event title";
+    if (!eventForm.event_date.trim()) e.event_date = "Please enter the date";
+    if (!eventForm.venue.trim()) e.venue = "Please enter the venue";
+    if (!eventForm.image.trim()) e.image = "Please add an image link";
+    if (!eventForm.description.trim()) e.description = "Please add a short description";
+    setEventErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const createEvent = async () => {
+    if (!validateEvent() || savingEvent) return;
+    setSavingEvent(true);
+    setEventFormError("");
+    setEventNotice("");
+    const { error } = await supabase.from("events").insert({
+      title: eventForm.title.trim().slice(0, 120),
+      event_date: eventForm.event_date.trim().slice(0, 60),
+      venue: eventForm.venue.trim().slice(0, 120),
+      tag: eventForm.tag,
+      image: eventForm.image.trim().slice(0, 500),
+      description: eventForm.description.trim().slice(0, 500),
+    });
+    setSavingEvent(false);
+    if (error) { setEventFormError("We couldn't save the event. Please try again."); return; }
+    setEventForm(emptyEvent);
+    setEventNotice("Event published — it's live on the homepage now.");
+    await queryClient.invalidateQueries({ queryKey: ["events"] });
+  };
+
+  const deleteEvent = async (ev: EventItem) => {
+    setDeletingId(ev.id);
+    const { error } = await supabase.from("events").delete().eq("id", ev.id);
+    setDeletingId(null);
+    setConfirmDelete(null);
+    if (error) { setEventFormError("We couldn't delete that event. Please try again."); return; }
+    setEventNotice(`"${ev.title}" was removed from the site.`);
+    await queryClient.invalidateQueries({ queryKey: ["events"] });
+  };
 
   const load = async (quiet = false) => {
     if (!quiet) setLoading(true);
